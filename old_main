@@ -1,0 +1,96 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <tm4c123gh6pm.h> // Device-specific header file
+#include "DIO.h"
+#include "UART.h"
+#include "PWM.h"
+void delay_ms(int delay);
+void intToStr(int num, char *str);
+int main(void) {
+    char str[20] = {0};
+    int num = 0;
+    bool dir = false;
+    bool brake = false;
+    UART0_Init(); // Initialize UART0
+    PinPB1_Init();
+    PWM_Init(20000);         // Initialize PWM with 20 kHz frequency
+    PWM_SetDutyCycle(1); // Set the duty cycle to 25%
+    // 1. Enable clock for GPIO Port F
+    SYSCTL_RCGCGPIO_R |= 0x20;       // Enable clock for Port F
+    while ((SYSCTL_PRGPIO_R & 0x20) == 0); // Wait for Port F to be ready
+
+    // 2. Configure PF2 (Blue LED) as output
+    GPIO_PORTF_DIR_R |= 0x04;        // Set PF2 as output
+    GPIO_PORTF_DEN_R |= 0x04;        // Enable PF2 as a digital pin
+    UART0_WriteString("Enter Duty Cycle:\n\r");
+    while (1) {
+        num = UART0_ReadInt(num,&dir,&brake);
+        num = (num == 0)?1:num;
+        num = (num == 100)?99:num;
+        PWM_SetDutyCycle(num);
+        //snprintf(str,sizeof(str), "%d", num);
+        intToStr(num, str);
+        UART0_WriteChar('\x1b'); // ESC
+        UART0_WriteChar('[');    // [
+        UART0_WriteChar('2');    // 2
+        UART0_WriteChar('K');    // K
+        UART0_WriteChar('\r');   // Carriage Return
+        UART0_WriteString(str);
+        UART0_WriteChar('D');
+        UART0_WriteChar(dir+48);
+        PinPB1_Set(dir);
+        GPIO_PORTF_DATA_R ^= 0x04;   // Toggle PF2 (Blue LED)
+
+        delay_ms(50);               // Delay for 500 ms
+    }
+
+}
+
+// Delay function (approximate)
+void delay_ms(int delay) {
+    int i, j;
+    for (i = 0; i < delay; i++) {
+        for (j = 0; j < 3180; j++);  // Inner loop for ~1 ms delay
+    }
+}
+
+void intToStr(int num, char *str) {
+    int i = 0, isNegative = 0;
+    int j;
+    int k;
+
+    // Handle 0 explicitly
+    if (num == 0) {
+        str[i++] = '0';
+        str[i] = '\0';
+        return;
+    }
+
+    // Handle negative numbers
+    if (num < 0) {
+        isNegative = 1;
+        num = -num;
+    }
+
+    // Convert number to string
+    while (num != 0) {
+        str[i++] = (num % 10) + '0';
+        num /= 10;
+    }
+
+    // Add '-' for negative numbers
+    if (isNegative) {
+        str[i++] = '-';
+    }
+
+    str[i] = '\0'; // Null-terminate the string
+
+    // Reverse the string
+    for (j = 0, k = i - 1; j < k; j++, k--) {
+        char temp = str[j];
+        str[j] = str[k];
+        str[k] = temp;
+    }
+}
